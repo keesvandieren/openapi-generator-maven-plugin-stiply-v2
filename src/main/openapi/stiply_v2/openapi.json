@@ -1,0 +1,4142 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Stiply API",
+    "description": "# Introduction\nThe Stiply API offers a toolset to integrate our first class signing service in your own projects. The Stiply API is very easy to use and the reference documentation below should get you started in no time. Should you have any questions regarding the API whatsoever, or do you need a function that is not yet supported, then please don't hesitate to contact us at support@stiply.nl.\n\n## Privacy-by-design\nOur application has been build with a privacy-by-design methodology in mind. That means that we only store the necessary personal data and that we keep it not longer than necessary. This means that we delete the signed documents and data after one month, at the end of the month.\n\n# How to use the API\nWith the Stiply API your application can send one or more documents to one or more signers for signing.\n\n## Basic flow\n- use the [Create Sign Request](#tag/sign-requests/operation/SendSignRequest) endpoint to create and send a new sign request.\n  - See the payload examples how to send documents with different fields, add more signers or use different identification methods.\n  - Make sure to provide a `call_back_url` when sending a sign request. Your application will be notified on the provided URL when the sign request is completed.\n- Stiply will sent e-mails to the signers to notify them that they need to sign the documents\n- When the sign request is completed use the [Download all documents of a sign request](#tag/sign-requests/operation/DownloadSignRequestFiles) endpoint to download a zipfile with all signed documents and a proof document.\n\n## Integrate signing in an application without sending emails\n- use the [Create Sign Request](#tag/sign-requests/operation/SendSignRequest) endpoint to create and send a new sign request.\n  - See the payload examples how to send documents with different fields, add more signers or use different identification methods.\n  - Make sure to provide a `call_back_url` when sending a sign request. Your application will be notified on the provided URL when the sign request is completed.\n  - For the signer provide the `identification_method` with value `custom`. Stiply will not sent emails to signers with this invitation method.\n- Use the [Sign Request signers](#tag/sign-requests/operation/GetSignRequestSigners) endpoint to get the signers of the sign request. Use the value from the `sign_url` property, to navigate users to our signing solution.\n- When the sign request is completed, use the [Download all documents of a sign request](#tag/sign-requests/operation/DownloadSignRequestFiles) endpoint to download a zipfile with all signed documents and a proof document.\n\n# Authentication\nThe Stiply API uses bearer tokens to authenticate a request. Your application must acquire a bearer token and send this token with each request to the Stiply API. The token is added using the `Authorization` HTTP header:\n\n```http\nAuthorization: Bearer <access_token>\n```\n\nTo acquire an access token, the following forms of authentication are available:\n- OAuth2 Authorisation Code Flow with Refresh Tokens\n- Oauth2 Client Credential Flow\n- Personal Access Token\n\nThe OAuth Authorization Code Flow is the most complex one to implement, but allows your application to perform actions **on behalf of** the end user.\nThe OAuth Client Credential Flow is easier to implement, but doesn't allow your application to perform actions on behalf of the end user.\nPersonal Access Tokens are easy to implement, but you have the responsibility to refresh them before they expire.\n\n## OAuth2 Authorisation Code Flow\nOAuth2 allows your application to perform actions (e.g. send sign requests) on behalf of the end user after they have consented your application.\nTo acquire an access token the following steps are needed:\n\n- Register an OAuth2 Client\n- Acquire consent from the end user and receive an authorization code\n- Exchange the authorization code for an access token and refresh token\n- When the access token is expired acquire a new access token with the refresh token\n\n### Register OAuth2 Client\nTo use one of the OAuth2 flows you need to register your application:\n- Open a browser and navigate to [API Settings](https://app.stiply.nl/settings/api/clients)\n- Click the `Create New Client` link and provide the following information:\n\n|Name|Description|\n|---|---|\n|Name|The name of your application. Please note that end users will see this name when they are consenting your application.|\n|Confidential|Whether the client is confidential. If set to yes, a client secret is generated. When a client is not confidential, no secret is generated. Do not mark smartphone apps or single page applications as confidential since they cannot securely store a secret. Backends of apps can be confidential.|\n|Redirect URL|The URL end users are redirected to after consenting your application.|\n|Scopes|The scopes the client can use. Choose `SignRequest.ReadWrite` or `SignRequest.ReadWrite.Limited`. The limited scope won't give access to the 'list sign requests' endpoint and sign requests not created by your client.|\n\n- Click the `Create` button\n- A new client will be visible in the OAuth clients list. The `Client ID` and `Secret` are needed to acquire an access token.\n\n### Acquire consent and receive authorization code\nTo acquire consent from the end user, the user visits our authorization URL: `https://app.stiply.nl/oauth/authorize`. After giving consent, the user is redirected back to your application at the configured `Redirect URL`. Web applications can use an HTTP redirect to navigate the user. Desktop application may need to open a system browser window.\n\nAcquiring consent consists of the following steps:\n- The user navigates to the authorization URL: `https://app.stiply.nl/oauth/authorize` with the following parameters:\n\n|Name|Description|\n|---|---|\n|response_type|`code`|\n|client_id|The client id of the registered client.|\n|redirect_uri|The Redirect URL of the registered client. Please note that the URL must exactly match the registered URL.|\n|scope|The scopes (comma separated) to get consent for. Only the scopes that are enabled on the client can be used. When not provided, the `SignRequest.ReadWrite` scope is used, if the client has that scope. For other scopes, this parameter must be added to the request.|\n\n`https://app.stiply.nl/oauth/authorize?response_type=code&client_id=<your_client_id>&redirect_uri=<your_redirect_uri>`\n\n\n- The user signs in with a Stiply account and gives consent to your application\n- The user is redirected back to your application using the provided redirect URL. The URL will also contain a `code` parameter: `https://your.application.com/callback?code=<code>`. The code can be exchanged for an access token.\n\n### Exchange the authorization code for an access token and refresh token\nTo exchange the authorization code your application must send a POST request to our token URL: `https://api.stiply.nl/oauth/token` with the following parameters:\n\n|Name|Description|\n|---|---|\n|grant_type|`authorization_code`|\n|code|The code that is received within the redirect url.|\n|client_id|The client id of the registered client.|\n|client_secret|The secret of the registered client.|\n|redirect_uri|The Redirect URL of the registered client. Please note that the URL must exactle match the registered URL.|\n\n```sh\ncurl 'https://api.stiply.nl/oauth/token' \\\n    -F 'grant_type=authorization_code' \\\n    -F 'code=<code>' \\\n    -F 'client_id=<client_id>' \\\n    -F 'client_secret=<client_secret>' \\\n    -F 'redirect_uri=<redirect_uri>'\n```\n\nYour application will receive a payload with an access token and refresh token.\n```json\n{\n \"token_type\": \"Bearer\",\n \"expires_in\": 1800,\n \"access_token\": \"{access_token}\",\n \"refresh_token\": \"{refresh_token}\"\n}\n```\nThe access token can be used by your application to call the Stiply API on behalf of the end user. The access token expires within 30 minutes.\nYour application should securely store the refresh token, which can be used to acquire a new access token without user interaction.\nThe refresh token is valid for 14 days. Make sure to use it before it expires. Once the refresh token expires, the end user must consent your application again.\n\n### Acquire a new access token with a refresh token\nTo acquire a new access token your application must send a POST request to our token URL: `https://api.stiply.nl/oauth/token` with the following parameters:\n\n|Name|Description|\n|---|---|\n|grant_type|`refresh_token`|\n|refresh_token|The refresh token that is received previously.|\n|client_id|The client id of the registered client.|\n|client_secret|The secret of the registered client.|\n\n```sh\ncurl 'https://api.stiply.nl/oauth/token' \\\n    -F 'grant_type=refresh_token' \\\n    -F 'refresh_token=<refresh_token>' \\\n    -F 'client_id=<client_id>' \\\n    -F 'client_secret=<client_secret>'\n```\n\nYour application will receive a payload with a new access token and refresh token.\n```json\n{\n \"token_type\": \"Bearer\",\n \"expires_in\": 1800,\n \"access_token\": \"{access_token}\",\n \"refresh_token\": \"{refresh_token}\"\n}\n```\n\nThe new access token will be valid for 30 minutes. The new refresh token will be valid for 14 days.\n\n## OAuth2 Client Credential Flow\nOAuth2 allows your application to acquire an access token without any user interaction.\nThe actions will be performed on behalf of the user who has registered the client.\nTo acquire an access token the following steps are needed:\n\n- Register an OAuth2 Client\n- Acquire an access token\n\n### Register OAuth2 Client\nTo use one of the OAuth2 flows you need to register your application:\n- Open a browser and navigate to [API Settings](https://app.stiply.nl/settings/api)\n- Click the `Create New Client` link and provide the following information:\n\n|Name|Description|\n|---|---|\n|Name|The name of your application. Please note that end users will see this name when they are consenting your application.|\n|Confidential|Whether the client is confidential. If set to yes, a client secret is generated. When a client is not confidential, no secret is generated. Do not mark smartphone apps or single page applications as confidential since they cannot securely store a secret. Backends of apps can be confidential.|\n|Redirect URL|The URL end users are redirected to after consenting your application.|\n|Scopes|The scopes the client can use. Choose `SignRequest.ReadWrite` or `SignRequest.ReadWrite.Limited`. The limited scope won't give access to the 'list sign requests' endpoint and sign requests not created by your client.|\n\n- Click the `Create` button\n- A new client will be visible in the OAuth clients list. The `Client ID` and `Secret` are needed to acquire an access token.\n\n### Acquire an access token\nTo acquire an access token your application must send a POST request to our token URL: `https://api.stiply.nl/oauth/token` with the following parameters:\n|Name|Description|\n|---|---|\n|grant_type|`client_credentials`|\n|client_id|The client id of the registered client.|\n|client_secret|The secret of the registered client.|\n|scope|The scopes (comma separated) to get consent for. Only the scopes that are enabled on the client can be used. When not provided, the `SignRequest.ReadWrite` scope is used, if the client has that scope. For other scopes, this parameter must be added to the request.|\n\n```sh\ncurl 'https://api.stiply.nl/oauth/token' \\\n    -F 'grant_type=client_credentials' \\\n    -F 'client_id=<client_id>' \\\n    -F 'client_secret=<client_secret>'\n```\n\nYour application will receive a payload with an access token.\n```json\n{\n \"token_type\": \"Bearer\",\n \"expires_in\": 1800,\n \"access_token\": \"{access_token}\"\n}\n```\n\nThe access token can be used by your application to call the Stiply API on behalf of the user that has created the token.\nThe new access token will be valid for 30 minutes. Acquire a new one when the token is expired.\n\n## Personal Access Tokens\nA personal access token (PAT) allows you to create an access token for your application.\nThe actions will be performed on behalf of the user who has created the Personal Access Token.\n\nTo create a new Personal access token:\n- Open a browser and navigate to [API Settings](https://app.stiply.nl/settings/api/tokens)\n- Click the `Create New Token` link and provide the following information:\n\n|Name|Description|\n|---|---|\n|Name|The name of your application.|\n|Scopes|The scopes the token can use. Choose `SignRequest.ReadWrite` or `SignRequest.ReadWrite.Limited`. The limited scope won't give access to the 'list sign requests' endpoint and sign requests not created by your client. Please note that the Limited scope should not be used with Personal Access Tokens. When the token is expired and a new token is created, the new token won't have access to sign requests created with the expired token. Use OAuth Client Credentials Flow or OAuth Code Grant Flow when the limited scope is desired.|\n|Expires at|Date on which the access token will expire. After expiration the token cannot be used anymore.|\n\n- Click the `Create` button\n- A new access token will be displayed.\n- Copy the access token and securely store it in your application. The token will only be displayed once.\n\nThe access token can be used by your application to call the Stiply API on behalf of the user that has created the token.\n\n## Security Definitions\nThis section describes the API security definitions.\n\n<SecurityDefinitions />\n\n# Webhooks\nThe Stiply API has support for webhooks. Use webhooks if your application is interested in events that occur during the signing process, e.g. when a signrequest is sent, completed or when a single signer has signed the sign request. Webhooks is an improvement of the `callback_url` functionality. Webhooks won't replace the `callback_url` functionality.\n\n## Register a webhook endpoint\nTo start with webhook you need to register a webhook endpoint:\n- Register a client first. See section [OAuth2-Authorisation-Code-Flow](#section/Authentication/OAuth2-Authorisation-Code-Flow)\n- Open a browser and navigate to [API Settings](https://app.stiply.nl/settings/api/webhooks)\n- Click the `Create new endpoint` button and provide the following information:\n|Name|Description|\n|---|---|\n|Client|The client to add this endpoint to. For some events the scopes of the client are applied.|\n|URL|The URL of the endpoint to send the webhook event to.|\n|Events|The events the endpoint is interested in.|\n- Click the `Create` button\n- A signing secret will be displayed\n- Copy the signing secret and store it in your application. The signing secret can be used to validate de webhook request.\n\n## Handling events\nWhen an endpoint is registered, the events the endpoint is interested in will be sent to the endpoint using a http POST request. When an event is processed successfully, the endpoint should return a http success statuscode `200`. The request will be retried using exponential backoff when an error statuscode (`4xx`, `5xx`) is returned.\n\n## Webhook Event Body\nAll webhook events are wrapped in a webhook event body having a header and a data secton:\n\n```json\n{\n  \"header\": {\n    \"message_id\": \"uuid\",\n    \"event_type\": \"signrequest.completed\",\n    \"timestamp\": \"2023-09-19T14:15:22Z\"\n  },\n  \"data\": {\n    ...\n  }\n}\n```\n\n## Verifying the webhook event request\nAll webhook events are signed using the signing secret that is created when the endpoint is registered. This signature allows receivers to verify the request. The signature is added in a HTTP request header: `X-Stiply-Signature`. The header contains a timestamp (t) and signature (s): `t=1692187372,s=asdfasdfasdfasdfasdfasdf`. The signature is generated using a Hash-based Message Authentication Code (HMAC) with SHA-256.\n\nTo verify the signature:\n- Extract the timestamp and signature from the header, split the header value using the `,` character, then split each part using the `=` character. The value with prefix `t` is the timestamp and the value with prefix `s` is the signature.\n- Create the signature payload by concatenating the timestamp, the character `.` and the actual json payload  / request body\n- Compute the expected signature using a HMAC with SHA-256. Use the endpoint's signing secret as the key and the signature payload as the message.\n- Compare the signature from the header with the expected signature. They should match. If not the message is not signed correctly and should be rejected.\n\nCode Example:\n\n```php\n$payload = $request->body();\nparse_str($signingHttpHeader, $signingHeaderParts);\n$timestamp  = $signingHeaderParts['t'];\n$signature = $signingHeaderParts['s'];\n\n$signingPayload = $timestamp.'.'.$payload;\n$expectedSignature = hash_hmac('sha256', $signingPayload, $signing_secret);\n$isValid = $signature === $expectedSignature;\n\n```\n",
+    "termsOfService": "https://www.stiply.nl/terms",
+    "contact": {
+      "name": "Stiply Support",
+      "email": "support@stiply.nl"
+    },
+    "version": "2.0",
+    "x-logo": {
+      "url": "https://app.stiply.nl/img/logos/stiply-4cee.png"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.stiply.nl"
+    }
+  ],
+  "paths": {
+    "/v2/sign_requests": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get a list with sign requests",
+        "description": "Returns a list of sign requests the user is allowed to view in the user's default account.",
+        "operationId": "GetSignRequests",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/page_size"
+          },
+          {
+            "$ref": "#/components/parameters/orderby"
+          },
+          {
+            "$ref": "#/components/parameters/signrequests_filter_status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GetSignRequestsResponse"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Send a sign request",
+        "description": "Create and send a new sign request with the provided documents to the provided signers.\nTo send a sign request with a list of URLs to the documents, use the `application/json` request body.\nThe files provided with the `file_urls` property will be downloaded and send to the signers.\nPlease note the urls must be accessible download urls to the files.\ne.g. a normal share link to a google document opens an html preview page of the document\nand cannot be used to download the file.\n\nTo send a sign request with a list of file uploads, use the `multipart/form-data` request body.\nThe files uploaded in the `files` array will be send to the signers.\nPlease note that the total size of the uploaded files cannot exceed 18MB.\nThis limitation does not apply when creating a sign request with `file_urls`.\n\n`multipart/formdata` bodies do not support arrays with complex types.\nUse zero based array brackets in the field name to provide signers and fields:\n```\nsigners[0][email]=user@example.com\nsigners[0][fields][0][name]=signature_0\nsigners[0][fields][0][type]=signature\nsigners[1][email]=user2@example.com\nsigners[1][fields][0][name]=signature_1\nsigners[1][fields][0][type]=signature\n```\n\nMake sure to add at least one signature field for each signer.",
+        "operationId": "SendSignRequest",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSignRequestRequestJson"
+              },
+              "examples": {
+                "Signrequest with title": {
+                  "summary": "Send signrequest with title",
+                  "description": "Sends a sign request to one signer, with just one signature field.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Sequential sign request": {
+                  "summary": "Send sequential sign request",
+                  "description": "    Sends a sign request to two signers.\n    The second signer can sign the document after the first signer has signed.\n    The order of the signers does matter. The first one will need to sign first.\n    All signers must have signed within two weeks.\n\n    In the document, all occurrences of {{signature_0}} will be\n    replaced by a signature field for the first signer. All occurences\n    of {{signature_1}} will be replaced by a signature field for the second signer.\n    The name of the fields must match the value within the {{ }}",
+                  "value": {
+                    "title": "Contract X - sequential",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf",
+                      "https://dropbox.com/document-2.pdf"
+                    ],
+                    "signing_sequence_type": "sequential",
+                    "term": "2w",
+                    "signers": [
+                      {
+                        "email": "user-1@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      },
+                      {
+                        "email": "user-2@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_1",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Parallel sign request": {
+                  "summary": "Send parallel sign request",
+                  "description": "    Sends a sign request to two signers.\n    Both signers can immediately sign the document. The order of the signers doesn't matter.\n    All signers must have signed within three days.\n    \n    In the document, all occurrences of {{signature_0}} will be\n    replaced by a signature field for the first signer. All occurences\n    of {{signature_1}} will be replaced by a signature field for the second signer.\n    The name of the fields must match the value within the {{ }}\n    ",
+                  "value": {
+                    "title": "Contract X - parallel",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf",
+                      "https://dropbox.com/document-2.pdf"
+                    ],
+                    "signing_sequence_type": "parallel",
+                    "term": "3d",
+                    "signers": [
+                      {
+                        "email": "user-1@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      },
+                      {
+                        "email": "user-2@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_1",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Unprepared Signrequest": {
+                  "summary": "Send unprepared signrequest",
+                  "description": "Sends a sign request to one signer, with no signature fields. The signer is required to place the signature field in the document.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "allow_add_fields": true
+                      }
+                    ]
+                  }
+                },
+                "Signrequest with callback": {
+                  "summary": "Send signrequest with a callback url",
+                  "description": "    Sends a sign request to a signer. When signer signs the document the provided callback url is invoked.\n\n    Please note:\n    - The callback url is invoked using a HTTP `GET` request.\n    - the following querystring parameters are added to the url:\n      - `key={sign_request_key}`\n      - `external_key={external_key}`\n      - `sign_request_id={sign_request_id}`\n    - When the callback responses with an error status code (4xx, 5xx),\n      the callback is retried 12 times using an exponential backoff algorithm.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "call_back_url": "https://www.myawesomewebsitecallbackurl.com/callback?my_parameter=xyz",
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Sign request full": {
+                  "summary": "Send sign request to one signer (large example)",
+                  "description": "Send a sign request to one signer, full example.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf",
+                      "https://dropbox.com/document-2.pdf"
+                    ],
+                    "signing_sequence_type": "parallel",
+                    "term": "2w",
+                    "external_key": "jgxfx3qYLaL9A2th3XejaOoODEp2QahRr1s5b3ki062JMu1k9n",
+                    "call_back_url": "https://www.myawesomewebsitecallbackurl.com/callback",
+                    "message": "Hi! Could you please sign our license agreement? Cheers!",
+                    "comment": "Customer wants to start asap",
+                    "background_color_fields": "#ffffff",
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          },
+                          {
+                            "name": "text_0",
+                            "type": "text"
+                          },
+                          {
+                            "name": "date_0",
+                            "type": "date"
+                          },
+                          {
+                            "name": "initial_0",
+                            "type": "initial"
+                          },
+                          {
+                            "name": "c_0",
+                            "type": "checkbox"
+                          },
+                          {
+                            "name": "text_0_optional",
+                            "type": "text",
+                            "optional": true
+                          },
+                          {
+                            "name": "date_0_optional",
+                            "type": "date",
+                            "optional": true
+                          },
+                          {
+                            "name": "initial_0_optional",
+                            "type": "initial",
+                            "optional": true
+                          },
+                          {
+                            "name": "c_0_o",
+                            "type": "checkbox",
+                            "optional": true
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signer with all tag types": {
+                  "summary": "Send signrequest to signer with all tag types",
+                  "description": "Sends a sign request to one signer.\nAll occurrences of {{signature_0}} in the documents will be replaced by a signature field.\nAll occurrences of {{text_0}} in the documents will be replaced by a text field.\nAll occurrences of {{date_0}} in the documents will be replaced by a date field.\nAll occurrences of {{initial_0}} in the documents will be replaced by a initial field.\nAll occurrences of {{c_0}} in the documents will be replaced by a checkbox field.\nAll occurrences of {{r_0}} in the documents will be replaced by\n    a radiobutton field which is contained in the group `choices`.\nAll occurrences of {{x_0}} in the documents will be replaced by\n    a radiobutton field which is contained in the group `other_choices`.\n\nThe name of the fields must match the value within the {{ }}",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          },
+                          {
+                            "name": "text_0",
+                            "type": "text"
+                          },
+                          {
+                            "name": "date_0",
+                            "type": "date"
+                          },
+                          {
+                            "name": "initial_0",
+                            "type": "initial"
+                          },
+                          {
+                            "name": "c_0",
+                            "type": "checkbox"
+                          },
+                          {
+                            "name": "r_0",
+                            "type": "radio",
+                            "field_group": "choices"
+                          },
+                          {
+                            "name": "x_0",
+                            "type": "radio",
+                            "field_group": "other_choices"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signer with optional tags": {
+                  "summary": "Send signrequest to signer with optional tags",
+                  "description": "Sends a sign request to one signer.\nAll occurrences of {{signature_0}} in the documents will be replaced by a signature field.\nAll occurrences of {{text_0}} in the documents will be replaced by a text field.\nAll occurrences of {{date_0}} in the documents will be replaced by a date field.\nAll occurrences of {{initial_0}} in the documents will be replaced by a initial field.\nAll occurrences of {{c_0}} in the documents will be replaced by a checkbox field.\nAll occurrences of {{text_0_optional}} in the documents\nwill be replaced by an optional text field.\nAll occurrences of {{date_0_optional}} in the documents\nwill be replaced by an optional date field.\nAll occurrences of {{initial_0_optional}} in the documents\nwill be replaced by an optional initial field.\nAll occurrences of {{c_0_o}} in the documents will be replaced by an optional checkbox field.\n\nThe name of the fields must match the value within the {{ }}",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          },
+                          {
+                            "name": "text_0",
+                            "type": "text"
+                          },
+                          {
+                            "name": "date_0",
+                            "type": "date"
+                          },
+                          {
+                            "name": "initial_0",
+                            "type": "initial"
+                          },
+                          {
+                            "name": "c_0",
+                            "type": "checkbox"
+                          },
+                          {
+                            "name": "text_0_optional",
+                            "type": "text",
+                            "optional": true
+                          },
+                          {
+                            "name": "date_0_optional",
+                            "type": "date",
+                            "optional": true
+                          },
+                          {
+                            "name": "initial_0_optional",
+                            "type": "initial",
+                            "optional": true
+                          },
+                          {
+                            "name": "c_0_o",
+                            "type": "checkbox",
+                            "optional": true
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signer with SMS authentication": {
+                  "summary": "Send signrequest to signer with SMS identification",
+                  "description": "Sends a sign request to one signer. The signer must be identified by SMS verification.\nAfter the signer has signed the document, the signer is identified\nby sending a SMS verification code to the provided phone number.\n\nAll occurrences of {{signature_0}} in the documents will be replaced by a signature field.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "phone": "31612345678",
+                        "auth_method": "sms",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signer with iDIN identification": {
+                  "summary": "Send signrequest to signer with iDIN identification",
+                  "description": "Sends a sign request to one signer. The signer must be identified by iDIN.\nAfter the signer has signed the document, the signer is identified\nby singing into his digitial banking portal.\nThe signer's name and date of birth as known with the bank\nwill be recorded in the proof document.\n\nAll occurrences of {{signature_0}} in the documents will be replaced by a signature field.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "auth_method": "idin",
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signer with eMandate": {
+                  "summary": "Send signrequest to signer with eMandate",
+                  "description": "Sends a sign request to one signer and requests an electronic payment mandate (eMandate).\nAfter the signer has signed the document, \nthe signer is requested for a electronic payment mandate.\nThe signer chooses a bank and is redirectedto the digital banking portal to provide a e-Mandate.\n\nAfter the e-Mandate is provided the e-Mandate properties will be recorded in the proof document.\nThe e-Mandate properties can be used for debit collections.\n\nAll occurrences of {{signature_0}} in the documents will be replaced by a signature field.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "auth_method": "emandate",
+                        "emandate": {
+                          "instrument_code": "CORE",
+                          "sequence_type": "RCUR"
+                        },
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signrequest with field coordinates": {
+                  "summary": "Send signrequest with field coordinates",
+                  "description": "Sends a sign request to one signer, with just one signature field placed with coordinates.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "fields": [
+                          {
+                            "type": "signature",
+                            "document": "1",
+                            "page": "1",
+                            "x": "277",
+                            "y": "209"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Sign request with terms or attachment": {
+                  "summary": "Send sign request with a terms document",
+                  "description": "Sends a sign request to one signer, with just one signature field\nplaced with coordinates. Allong with the document, a terms document\nis send. The signer has to agree with the terms document in order\nsign the document. An attachment has always a file url or\nuploaded file, and a type.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "attachments": [
+                      {
+                        "file_url": "https://dropbox.com/document-2.pdf",
+                        "type": "terms"
+                      }
+                    ],
+                    "term": "2w",
+                    "signers": [
+                      {
+                        "email": "user-1@example.com",
+                        "fields": [
+                          {
+                            "type": "signature",
+                            "document": "1",
+                            "page": "1",
+                            "x": "277",
+                            "y": "209"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "Signrequest with request for attachments from signer": {
+                  "summary": "Send signrequest and ask attachments/files back from the signer",
+                  "description": "Sends a sign request to one signer and asks for two attachments to be sent back.\nThe `attachment_message` is the main message for the attachments that the signer will see. \nThis message is nullable and doesn't need to be added.\nThe `attachments` that are requested back from the signer must be in an array.\nWithin this array you can give a description of the attachment the signer needs to sent back, \nfor example a copy of their passport, id card or CV.\nFurthermore, you can also make the requested attachment optional.\nThese two parameters are required and need to be added to the api call if you want the \nsigner to send back the attachments.",
+                  "value": {
+                    "title": "Contract X",
+                    "file_urls": [
+                      "https://dropbox.com/document-1.pdf"
+                    ],
+                    "signers": [
+                      {
+                        "email": "user@example.com",
+                        "attachment_message": "Could you please send these files back?",
+                        "attachments": [
+                          {
+                            "description": "Please add a copy of your passport",
+                            "optional": false
+                          },
+                          {
+                            "description": "Please add a copy of your CV",
+                            "optional": true
+                          }
+                        ],
+                        "fields": [
+                          {
+                            "name": "signature_0",
+                            "type": "signature"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSignRequestRequestMultiPart"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The id of the new entity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CreatedResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Parameter validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": "10",
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "cURL",
+            "source": "# use multipart/formata to upload files\ncurl -X 'POST' \\\n    'https://api.stiply.nl/v2/sign_requests' \\\n    -H 'accept: application/json' \\\n    -H 'Authorization: Bearer <TOKEN>' \\\n    -H 'Content-Type: multipart/form-data' \\\n    -F 'title=Contract X' \\\n    -F 'files[]=@document-1.pdf;type=application/pdf' \\\n    -F 'files[]=@document-2.pdf;type=application/pdf' \\\n    -F 'signers[0][email]=user@example.com' \\\n    -F 'signers[0][fields][0][name]=signature_0' \\\n    -F 'signers[0][fields][0][type]=signature' \\\n    -F 'signers[0][fields][1][name]=text_0' \\\n    -F 'signers[0][fields][1][type]=text' \\\n    -F 'signers[1][email]=other-user@example.com' \\\n    -F 'signers[1][fields][0][name]=signature_1' \\\n    -F 'signers[1][fields][0][type]=signature' \\\n    -F 'signers[1][fields][1][name]=text_1' \\\n    -F 'signers[1][fields][1][type]=text'"
+          },
+          {
+            "lang": "php",
+            "label": "PHP",
+            "source": "    // use multipart/formdata to upload files\n    $client = new Client();\n    $headers = [\n        'Authorization' => 'Bearer <token>',\n    ];\n    $options = [\n    'multipart' => [\n        ['name' => 'title', 'contents' => 'Contract X'],\n        ['name' => 'signers[0][email]', 'contents' => 'user@example.com'],\n        ['name' => 'signers[0][fields][0][name]', 'contents' => 'signature_0'],\n        ['name' => 'signers[0][fields][0][type]', 'contents' => 'signature'],\n        ['name' => 'signers[0][fields][0][name]', 'contents' => 'text_0'],\n        ['name' => 'signers[0][fields][0][type]', 'contents' => 'text'],\n        ['name' => 'signers[1][fields][0][name]', 'contents' => 'signature_1'],\n        ['name' => 'signers[1][fields][0][type]', 'contents' => 'signature'],\n        ['name' => 'signers[1][fields][0][name]', 'contents' => 'text_1'],\n        ['name' => 'signers[1][fields][0][type]', 'contents' => 'text'],\n        [\n            'name' => 'files[]',\n            'contents' => <file content>,\n            'filename' => 'document-1.pdf',\n            'headers'  => ['Content-Type' => 'application/pdf']\n        ],\n        [\n            'name' => 'files[]',\n            'contents' => <file content>,\n            'filename' => 'document-2.pdf',\n            'headers'  => ['Content-Type' => 'application/pdf']\n        ]\n    ]];\n    $request = new Request('POST', 'https://api.stiply.nl/v2/sign_requests', $headers);\n    $res = $client->sendAsync($request, $options)->wait();\n    echo $res->getBody();"
+          },
+          {
+            "lang": "cs",
+            "label": "C#",
+            "source": "    // use multipart/formdata to upload files\n\n    var client = new RestClient(\"https://api.stiply.nl/v2/sign_requests\");\n    client.Timeout = -1;\n    var request = new RestRequest(Method.POST);\n    request.AddHeader(\"Authorization\", \"Bearer <TOKEN>\");\n    request.AddFile(\"files[]\", \"document-1.pdf\");\n    request.AddFile(\"files[]\", \"document-2.pdf\");\n    request.AddParameter(\"title\", \"Contract X\");\n    request.AddParameter(\"signers[0][email]\", \"user@example.com\");\n    request.AddParameter(\"signers[0][fields][0][name]\", \"signature_0\");\n    request.AddParameter(\"signers[0][fields][0][type]\", \"signature\");\n    request.AddParameter(\"signers[0][fields][0][name]\", \"text_0\");\n    request.AddParameter(\"signers[0][fields][0][type]\", \"text\");\n    request.AddParameter(\"signers[1][fields][0][name]\", \"signature_1\");\n    request.AddParameter(\"signers[1][fields][0][type]\", \"signature\");\n    request.AddParameter(\"signers[1][fields][0][name]\", \"text_1\");\n    request.AddParameter(\"signers[1][fields][0][type]\", \"text\");\n    IRestResponse response = client.Execute(request);\n    Console.WriteLine(response.Content);  "
+          },
+          {
+            "lang": "phyton",
+            "label": "Python",
+            "source": "    # use multipart/formdata to upload files\n    import requests\n\n    url = \"https://api.stiply.nl/v2/sign_requests\"\n    \n    payload={'title': 'Contract X',\n    'signers[0][email]': 'user@example.com',\n    'signers[0][fields][0][name]': 'signature_0',\n    'signers[0][fields][0][type]': 'signature',\n    'signers[0][fields][0][name]': 'text_0',\n    'signers[0][fields][0][type]': 'text',\n    'signers[1][fields][0][name]': 'signature_1',\n    'signers[1][fields][0][type]': 'signature',\n    'signers[1][fields][0][name]': 'text_1',\n    'signers[1][fields][0][type]': 'text'}\n    files=[\n    ('files[]',('document-1.pdf',open('document-1.pdf','rb'),'application/pdf')),\n    ('files[]',('document-2.pdf',open('document-2.pdf','rb'),'application/pdf'))\n    ]\n    headers = {\n    'Authorization': 'Bearer <TOKEN>',\n    }\n    \n    response = requests.request(\"POST\", url, headers=headers, data=payload, files=files)\n    \n    print(response.text)\n"
+          }
+        ]
+      }
+    },
+    "/v2/sign_requests/{sign_request}/actions/send_reminder": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Send Reminder",
+        "description": "Send a reminder email to the current signer(s) of the sign request.",
+        "operationId": "SendSignRequestReminder",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success without a response body."
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 20
+      }
+    },
+    "/v2/sign_requests/{sign_request}/actions/extend_term": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Extend the term of the sign request",
+        "description": "Extends the sign request's term of the provided sign request\nwith the provided period. The sign request will have a new expiration.\nThe notified signer's are informed about the new epxiration.",
+        "operationId": "ExtendSignRequestTerm",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendTermRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success without a response body."
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 30
+      }
+    },
+    "/v2/sign_requests/{sign_request}/actions/cancel": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Cancel the sign request",
+        "description": "Cancels the sign request. The sign request will be canceled and automatically deleted after max 90 days.\nUse notify_signers to indicate that the already notified signer's are informed about the cancelation.",
+        "operationId": "CancelSignRequest",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelSignRequestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Success without a response body."
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 35
+      }
+    },
+    "/v2/sign_requests/{sign_request}": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get a sign request",
+        "description": "Returns the properties of the sign request with the specified id.",
+        "operationId": "GetSignRequest",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GetSignRequestResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "x-sort-order": 40
+      },
+      "delete": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Delete the sign request",
+        "description": "Deletes the sign request. The sign request will be canceled and deleted.\nSigners are NOT notified. To notify signers use the cancel sign request endpoint before deleting the request.",
+        "operationId": "DeleteSignRequest",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success without a response body."
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ]
+      }
+    },
+    "/v2/sign_requests/by_key/{external_key}": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get a sign request by external key.",
+        "description": "Returns the properties of the sign request with the specified external key.",
+        "operationId": "GetSignRequestByExternalKey",
+        "parameters": [
+          {
+            "parameter": "external_key",
+            "name": "external_key",
+            "in": "path",
+            "description": "External key.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GetSignRequestResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "x-sort-order": 40
+      }
+    },
+    "/v2/sign_requests/by_key/{sign_request_key}": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get a sign request by key.",
+        "description": "Returns the properties of the sign request with the specified key.",
+        "operationId": "GetSignRequestByKey",
+        "parameters": [
+          {
+            "parameter": "sign_request_key",
+            "name": "sign_request_key",
+            "in": "path",
+            "description": "Key of the signrequest.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GetSignRequestResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "x-sort-order": 40
+      }
+    },
+    "/v2/sign_requests/{sign_request}/actions/download_files": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Download documents of the sign request",
+        "description": "Returns a zip file which contains all the sign request's documents.\nWhen the sign request is completed, A proof document is included in the zip file.",
+        "operationId": "DownloadSignRequestFiles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The files in this signrequest in ZIP format",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 50
+      }
+    },
+    "/v2/sign_requests/{sign_request}/actions/download_proof_document": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Download proof document",
+        "description": "Downloads th proof document of a completed sign request",
+        "operationId": "DownloadProofDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proof document of a completed sign request",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "x-sort-order": 55
+      }
+    },
+    "/v2/sign_requests/{sign_request}/signers": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get signers of the sign request",
+        "description": "Returns a list with signers of the provided sign request.",
+        "operationId": "GetSignRequestSigners",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GetSignRequestSignersResponse"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 60
+      }
+    },
+    "/v2/sign_requests/{sign_request}/signers/{signer}": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get a specific signer from a sign request",
+        "operationId": "GetSignRequestSigner",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          },
+          {
+            "$ref": "#/components/parameters/signer"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GetSignRequestSignerResponse"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 65
+      }
+    },
+    "/v2/sign_requests/{sign_request}/documents": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Get documents of a sign request",
+        "description": "Returns a list with documents of the provided sign request.",
+        "operationId": "GetSignRequestDocuments",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GetSignRequestDocumentsResponse"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 70
+      }
+    },
+    "/v2/sign_requests/{sign_request}/documents/{document}/actions/download_file": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Download a specific document in PDF format",
+        "operationId": "DownloadDocumentFile",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          },
+          {
+            "$ref": "#/components/parameters/document"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document in PDF format",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ],
+        "x-sort-order": 75
+      }
+    },
+    "/v2/accounts": {},
+    "/v2/organizations/{organization}/accounts": {},
+    "/v2/accounts/{account}/actions/create_stripe_customer": {},
+    "/v2/accounts/{account}/deactivate": {},
+    "/v2/accounts/{account}/logo": {},
+    "/v2/accounts/{account}": {},
+    "/v2/accounts/flat": {},
+    "/v2/accounts/{account}/settings": {},
+    "/v2/base/account-permissions": {},
+    "/v2/base/account-setting-categories": {},
+    "/v2/base/account-setting-types": {},
+    "/v2/base/creditor-banks": {},
+    "/v2/base/languages": {},
+    "/v2/base/organization-permissions": {},
+    "/v2/base/organization-setting-categories": {},
+    "/v2/base/organization-setting-types": {},
+    "/v2/base/sign-terms": {},
+    "/v2/base/user-permissions": {},
+    "/v2/organizations/{organization}/organizations": {},
+    "/v2/organizations": {},
+    "/v2/organizations/{organization}/darklogo": {},
+    "/v2/organizations/{organization}/favicon": {},
+    "/v2/organizations/{organization}/logo": {},
+    "/v2/organizations/{organization}": {},
+    "/v2/organizations/flat": {},
+    "/v2/organizations/{organization}/settings": {},
+    "/v2/accounts/{account}/users": {},
+    "/v2/organizations/{organization}/users": {},
+    "/v2/accounts/{account}/users/{user}": {},
+    "/v2/organizations/{organization}/users/{user}": {},
+    "/v2/users/{user}": {},
+    "/v2/users": {},
+    "/v2/accounts/{account}/users/{user}/permissions": {},
+    "/v2/organizations/{organization}/users/{user}/permissions": {},
+    "/v2/userinfo": {},
+    "/v2/base/webhook_event_types": {},
+    "/v2/accounts/{account}/oauth_clients": {},
+    "/v2/oauth_clients/{client}": {},
+    "/v2/oauth_clients": {},
+    "/v2/users/{user}/oauth_clients/{client}": {},
+    "/v2/users/{user}/oauth_clients": {},
+    "/v2/accounts/{account}/access_tokens": {},
+    "/v2/personal_access_tokens": {},
+    "/v2/users/{user}/personal_access_tokens": {},
+    "/v2/users/{user}/personal_access_tokens/{token}": {},
+    "/v2/accounts/{account}/webhooks": {},
+    "/v2/webhooks/{webhook_listener}": {},
+    "/v2/webhooks": {},
+    "/v2/oauth_clients/{client}/webhooks": {},
+    "/v2/accounts/{account}/audit_activities": {},
+    "/v2/audit_activities": {},
+    "/v2/organizations/{organization}/audit_activities": {},
+    "/v2/accounts/{account}/authentication_types": {},
+    "/v2/base/authentication_types": {},
+    "/v2/accounts/{account}/enabled_authentication_types": {},
+    "/v2/base/enabled_authentication_types": {},
+    "/v2/reject_reasons/{reject_reason}/actions/activate": {},
+    "/v2/reject_reasons/{reject_reason}/actions/archive": {},
+    "/v2/accounts/{account}/reject_reasons": {},
+    "/v2/accounts/{account}/sign_requests": {},
+    "/v2/sign_requests/{sign_request}/progress": {
+      "get": {
+        "tags": [
+          "sign requests"
+        ],
+        "summary": "Gets the progress of a sign request.",
+        "description": "Returns a list with progresses of the provided sign request.",
+        "operationId": "GetSignRequestProgress",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/sign_request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GetSignRequestProgressResponse"
+                      }
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "pat": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          },
+          {
+            "oauth2": [
+              "SignRequest.ReadWrite",
+              "SignRequest.ReadWrite.Limited"
+            ]
+          }
+        ]
+      }
+    },
+    "/v2/sign_requests/{sign_request}/signers/{signer}/actions/mail_sms_code": {},
+    "/v2/organizations/{organization_id}/bundle_purchases": {},
+    "/v2/organizations/{organization}/bundle_purchases": {},
+    "/v2/organizations/{organization}/bundle_balance": {},
+    "/v2/organizations/{organization}/bundle_statements": {},
+    "/v2/organizations/{organization}/stats/monthly_usage": {}
+  },
+  "components": {
+    "schemas": {
+      "RegisterUserClientRequest": {
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "redirect": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "public": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "default": false
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "UpdateClientRequest": {
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "redirect": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        },
+        "type": "object"
+      },
+      "RegisterPersonalAccessTokenRequest": {
+        "required": [
+          "name",
+          "expires_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "RegisterWebhookListenerRequest": {
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "event_types": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "UpdateWebhookListenerRequest": {
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "event_types": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "WebhookHeader": {
+        "properties": {
+          "message_id": {
+            "description": "message id",
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_type": {
+            "description": "type of the event",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Moment that the webhook event is created",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "Instrument": {
+        "type": "string",
+        "enum": [
+          "CORE",
+          "B2B"
+        ]
+      },
+      "SequenceType": {
+        "type": "string",
+        "enum": [
+          "RCUR",
+          "OOFF"
+        ]
+      },
+      "TransactionStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "pending",
+          "success",
+          "failure",
+          "expired",
+          "cancelled"
+        ]
+      },
+      "GetEnabledAuthenticationTypesResponse": {
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "description": "The id of the language",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name of the language",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GetSignRequestDocumentsResponse": {
+        "required": [
+          "id",
+          "filename",
+          "name",
+          "file_size",
+          "mime_type",
+          "download_url",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "description": "The document's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "filename": {
+            "description": "The document's filename",
+            "type": "string"
+          },
+          "name": {
+            "description": "The document's name",
+            "type": "string"
+          },
+          "file_size": {
+            "description": "The document's file size",
+            "type": "integer",
+            "minimum": 0
+          },
+          "mime_type": {
+            "description": "The document's mime type",
+            "type": "string"
+          },
+          "download_url": {
+            "description": "The url where the document can be downloaded",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "created_at": {
+            "description": "Date Time the document is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the document is last updated",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "CancelSignRequestRequest": {
+        "required": [
+          "notify_signers"
+        ],
+        "properties": {
+          "notify_signers": {
+            "description": "Provide whether the signers needs to be informed about the cancelation of the sign request.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CreateSignRequestAttachmentRequest": {
+        "required": [
+          "type",
+          "file_url"
+        ],
+        "properties": {
+          "file_url": {
+            "description": "Url of the attachment",
+            "type": "string",
+            "format": "uri"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AttachmentType",
+            "description": "Type of the attachment. The possible options are \"attachment\" or \"terms\"."
+          }
+        },
+        "type": "object"
+      },
+      "CreateSignRequestRequestJson": {
+        "required": [
+          "title",
+          "file_urls",
+          "signers"
+        ],
+        "properties": {
+          "title": {
+            "description": "The title of the sign request.",
+            "type": "string",
+            "maxLength": 250
+          },
+          "subject": {
+            "description": "The subject of the e-mail to the signers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "The message to be included in the e-mail to the signers.\nThe message can have some basic HTML tags.\nThe tags `<br>`, `<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<a>`,\n`<ul>`, `<ol>`, `<li>`, `<p>`, `<h1-5>` are allowed.\nAlways use `<br>` for newlines.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signing_sequence_type": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SigningSequenceType",
+                "description": "Choose if all signers can sign in parallel or sequential."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Choose if all signers can sign in parallel or sequential."
+          },
+          "term": {
+            "description": "2 digit code representing the sign term (1d = one day, 2w = two weeks, 3m = three months).\nWhen omitted, the account's configured default term will be used.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[1-9][dwm]$"
+          },
+          "external_key": {
+            "description": "A key for your internal use so you don't have to save the Stiply sign request key in your local database.\nHowever, your external key has to be unique.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "call_back_url": {
+            "description": "An URL to be called by Stiply when the last signer has signed the document.\nPlease note that `key={sign_request_key}`,`external_key={external_key}` and `sign_request_id={sign_request_id}`\nshall be added to the call back url querystring.\nThe URL will be called using a `GET` request.\nWhen the callback responses with an error status code,\nthe callback is retried 12 times using an exponential backoff algoritm.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "comment": {
+            "description": "A comment for internal use.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "background_color_fields": {
+            "description": "A background color for the fields that will be added to the documents.\n\nCurrently the following values are supported:\n\n- null: transparent background (default)\n- #ffffff: white background",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "enum": [
+              "#ffffff"
+            ]
+          },
+          "account_id": {
+            "description": "The id of the account to create the sign request in.\nThe user must have permissions in the provided account.\n\nWhen left empty, the default account of the user is used.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "file_urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "minItems": 1
+          },
+          "signers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateSignRequestSignerRequest"
+            },
+            "minItems": 1
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateSignRequestAttachmentRequest"
+            },
+            "minItems": 0
+          }
+        },
+        "type": "object"
+      },
+      "CreateSignRequestRequestMultiPart": {
+        "required": [
+          "title",
+          "files[]",
+          "signers[0][email]"
+        ],
+        "properties": {
+          "title": {
+            "description": "The title of the sign request.",
+            "type": "string",
+            "maxLength": 250
+          },
+          "subject": {
+            "description": "The subject of the e-mail to the signers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "The message to be included in the e-mail to the signers.\nThe message can have some basic HTML tags.\nThe tags `<br>`, `<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<a>`,\n`<ul>`, `<ol>`, `<li>`, `<p>`, `<h1-5>` are allowed.\nAlways use `<br>` for newlines.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signing_sequence_type": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SigningSequenceType",
+                "description": "Choose if all signers can sign in parallel or sequential."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Choose if all signers can sign in parallel or sequential."
+          },
+          "term": {
+            "description": "2 digit code representing the sign term (1d = one day, 2w = two weeks, 3m = three months).\nWhen omitted, the account's configured default term will be used.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[1-9][dwm]$"
+          },
+          "external_key": {
+            "description": "A key for your internal use so you don't have to save the Stiply sign request key in your local database.\nHowever, your external key has to be unique.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "call_back_url": {
+            "description": "An URL to be called by Stiply when the last signer has signed the document.\nPlease note that `key={sign_request_key}`,`external_key={external_key}` and `sign_request_id={sign_request_id}`\nshall be added to the call back url querystring.\nThe URL will be called using a `GET` request.\nWhen the callback responses with an error status code,\nthe callback is retried 12 times using an exponential backoff algoritm.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "comment": {
+            "description": "A comment for internal use.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "background_color_fields": {
+            "description": "A background color for the fields that will be added to the documents.\n\nCurrently the following values are supported:\n\n- null: transparent background (default)\n- #ffffff: white background",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null,
+            "enum": [
+              "#ffffff"
+            ]
+          },
+          "account_id": {
+            "description": "The id of the account to create the sign request in.\nThe user must have permissions in the provided account.\n\nWhen left empty, the default account of the user is used.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "files[]": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "minItems": 1
+          },
+          "attachments[0][file]": {
+            "type": "string",
+            "format": "binary"
+          },
+          "attachments[0][type]": {
+            "$ref": "#/components/schemas/AttachmentType"
+          },
+          "signers[0][email]": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 128
+          },
+          "signers[0][name]": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "signers[0][role]": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerRole"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "signer"
+          },
+          "signers[0][auth_method]": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerAuthenticationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signers[0][invitation_method]": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerInvitationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signers[0][phone]": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signers[0][language]": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signers[0][message]": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signers[0][emandate][emandate_id]": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 35
+          },
+          "signers[0][emandate][instrument_code]": {
+            "type": "string",
+            "enum": [
+              "CORE",
+              "B2B"
+            ]
+          },
+          "signers[0][emandate][sequence_type]": {
+            "type": "string",
+            "enum": [
+              "RCUR",
+              "OOFF"
+            ]
+          },
+          "signers[0][emandate][max_amount]": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 100000,
+            "minimum": 1
+          },
+          "signers[0][fields][0][name]": {
+            "type": "string"
+          },
+          "signers[0][fields][0][type]": {
+            "$ref": "#/components/schemas/FieldType"
+          },
+          "signers[0][fields][0][width]": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "signers[0][fields][0][optional]": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "signers[0][attachment_message]": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signers[0][attachments][0][description]": {
+            "type": "string"
+          },
+          "signers[0][attachments][0][optional]": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CreateSignRequestSignerRequest": {
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "description": "The emailaddress of signer",
+            "type": "string",
+            "format": "email",
+            "maxLength": 128
+          },
+          "name": {
+            "description": "The name of the signer",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "role": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerRole",
+                "description": "A signer can have different roles.\nRole is optional, but when provided can have the following values: ‘signer’, ‘approver’, ‘cc’, ‘dc’.\nWhen role is not provided the ‘signer’ role is used as default.\nWhen the value ‘signer’ is set, the signer will need to sign the document regularly.\nWhen the value ‘approver’ is set, the signer will need to approve the document without signing it.\nThe approver role is only allowed when the signrequest has ‘signing_sequence_type’ set on ‘sequential’.\nWhen the value cc is set, the signer will be notified about the progress of\nthe sign request and receive a copy of the signed documents.\nWhen the value dc is set, the signer will only receive the signed documents."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A signer can have different roles.\nRole is optional, but when provided can have the following values: ‘signer’, ‘approver’, ‘cc’, ‘dc’.\nWhen role is not provided the ‘signer’ role is used as default.\nWhen the value ‘signer’ is set, the signer will need to sign the document regularly.\nWhen the value ‘approver’ is set, the signer will need to approve the document without signing it.\nThe approver role is only allowed when the signrequest has ‘signing_sequence_type’ set on ‘sequential’.\nWhen the value cc is set, the signer will be notified about the progress of\nthe sign request and receive a copy of the signed documents.\nWhen the value dc is set, the signer will only receive the signed documents.",
+            "default": "signer"
+          },
+          "allow_add_fields": {
+            "description": "When true, the signer is allowed to add signature fields by clicking on the document.\nPlease note that the sender is not required to add a signature field to the document\nwhen the signer is allowed to add fields.",
+            "type": "boolean",
+            "default": "false"
+          },
+          "auth_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerAuthenticationMethod",
+                "description": "Authentication method for signer.\n\n- `sms`: signer is identified by sending a SMS with a code to a phone number\n- `idin`: signer is identified by using the trusted login method of a Dutch bank\n- `emandate`: signer is requested to provide an electronic payment mandate using a Dutch bank account\n\nWhen not provided, no identification of the signer will occur."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authentication method for signer.\n\n- `sms`: signer is identified by sending a SMS with a code to a phone number\n- `idin`: signer is identified by using the trusted login method of a Dutch bank\n- `emandate`: signer is requested to provide an electronic payment mandate using a Dutch bank account\n\nWhen not provided, no identification of the signer will occur."
+          },
+          "invitation_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerInvitationMethod",
+                "description": "By default Stiply sends an email to the signer with a link to sign the sign request.\nIf you would like to invite the signer yourself, you should set the invitation_method to `custom`.\nIn that case Stiply shall not send an email with the sign request to the signer.\n\nAfter sending the sign request use the\n[Get signers of the sign request](#tag/sign-requests/operation/GetSignRequestSigners) endpoint\nto get the sign requests's signers with sign link.\n\nUse the value `self` for the first signer to use the Stiply 'self signing' feature.\nFor more information on the 'self signing' feature, see our\n[article in the help center](https://help.stiply.com/nl/articles/260223-self-signing-zelf-ondertekenen-zonder-het-ondertekenproces-te-doorlopen).\n\nWhen this property is not provided, Stiply will send an email to the signer."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "By default Stiply sends an email to the signer with a link to sign the sign request.\nIf you would like to invite the signer yourself, you should set the invitation_method to `custom`.\nIn that case Stiply shall not send an email with the sign request to the signer.\n\nAfter sending the sign request use the\n[Get signers of the sign request](#tag/sign-requests/operation/GetSignRequestSigners) endpoint\nto get the sign requests's signers with sign link.\n\nUse the value `self` for the first signer to use the Stiply 'self signing' feature.\nFor more information on the 'self signing' feature, see our\n[article in the help center](https://help.stiply.com/nl/articles/260223-self-signing-zelf-ondertekenen-zonder-het-ondertekenproces-te-doorlopen).\n\nWhen this property is not provided, Stiply will send an email to the signer."
+          },
+          "phone": {
+            "description": "Cellular phone number of the signer is required in case auth_method is set to sms.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "description": "The language in which the signer receives correspondence.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "description": "You can send a specific message to a signer with a specific subject,\nthat overrules the sign_request subject in the mail to the signer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "You can send a specific message to a signer, that overrules the sign_request message in the mail to the signer.\nThe message can have some basic HTML tags.\nThe tags `<br>`, `<b>`, `<strong>`, `<i>`, `<em>`, `<u>`, `<a>`,\n`<ul>`, `<ol>`, `<li>`, `<p>`, `<h1-5>` are allowed.\nAlways use `<br>` for newlines.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirect_url": {
+            "description": "The URL where this signer is redirected to after signing the documents.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "url"
+          },
+          "attachment_message": {
+            "description": "This is the main message you can add when requesting attachments back from the signer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attachments": {
+            "description": "With this array you can ask the signer to sent some files back after signing.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentsRequest"
+            }
+          },
+          "emandate": {
+            "$ref": "#/components/schemas/EmandateRequest",
+            "description": "When auth_method is *emandate* use these fields to provide the emandate details."
+          },
+          "fields": {
+            "description": "Array with fields for the signer",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignerFieldRequest"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "SignerFieldRequest": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "description": "Name of the tag to search for in the documents.\nAll occurences of the tag `{{name}}` are replaced by a field of the provided type.\nWhen a name is provided, the page, x and y are ignored.\nThe occurences of the tag in the documents deteremine where the field will be placed.",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FieldType",
+            "description": "Type of the field"
+          },
+          "field_group": {
+            "description": "When the type is `radio`, all radiobutton fields with the same group will belong together.\nMaking it required that you select one option within each group.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "width": {
+            "description": "Width of the field. When not provided, the default width of the field type will be used.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "height": {
+            "description": "Height of the field. When not provided, the default height of the field type will be used.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "document": {
+            "description": "One based index of the document the field must be placed on.\nThis value is required when the field must be placed by coordinates.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "page": {
+            "description": "Page the field must be placed on.\nThis value is required when the field must be placed by coordinates.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "x": {
+            "description": "X-Position of the field\nThis value is required when the field must be placed by coordinates.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "y": {
+            "description": "Y-Position of the field\nThis value is required when the field must be placed by coordinates.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "optional": {
+            "description": "When true, the field is optional",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "EmandateRequest": {
+        "required": [
+          "instrument_code",
+          "sequence_type"
+        ],
+        "properties": {
+          "emandate_id": {
+            "description": "Your own emandate identifier. If not set, Stiply will generate an emandate id for you.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 35
+          },
+          "instrument_code": {
+            "description": "Type of emandate to request. Use CORE for default emandates, B2B for business to business emandates.\nCORE emandates have a refund risk of 56 days. Can be used for Consumer and Business debtors.\nB2B emandates don't have a refund risk period. Can only be used for Business debtors\nand are not supported by all banks.",
+            "type": "string",
+            "enum": [
+              "CORE",
+              "B2B"
+            ]
+          },
+          "sequence_type": {
+            "description": "Sequence type for the emandate. Use RCUR for a recurring emandate and OOFF for a one-off emandate.",
+            "type": "string",
+            "enum": [
+              "RCUR",
+              "OOFF"
+            ]
+          },
+          "max_amount": {
+            "description": "The max amount of the emandate.\nMax amount is only used with a B2B emandate.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 100000,
+            "minimum": 1
+          }
+        },
+        "type": "object"
+      },
+      "AttachmentsRequest": {
+        "required": [
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "description": "This will be the short description of this specific attachment you want to receive from the signer.\nThis could for example be a copy of a passport or a copy of their CV.",
+            "type": "string"
+          },
+          "optional": {
+            "description": "Mark the attachment optional. When the attachment is optional the signer is not required to\nprovide this attachment.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "type": "object"
+      },
+      "ExtendTermRequest": {
+        "required": [
+          "term"
+        ],
+        "properties": {
+          "term": {
+            "description": "2 digit code representing the sign term (1d = one day, 2w = two weeks, 3m = three months).\nWhen omitted, the account's configured default term will be used.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[1-9][dwm]$"
+          }
+        },
+        "type": "object"
+      },
+      "GetSignRequestProgressResponse": {
+        "required": [
+          "action",
+          "ip",
+          "location",
+          "system",
+          "value",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "description": "Type of progress",
+            "type": "string"
+          },
+          "ip": {
+            "description": "IP address that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "description": "Location that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "system": {
+            "description": "System / User agent that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "description": "Some additional information about the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the progress is recorded",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "GetSignRequestResponse": {
+        "required": [
+          "id",
+          "key",
+          "external_key",
+          "title",
+          "signing_type",
+          "signing_sequence_type",
+          "status",
+          "sent_at",
+          "expires_at",
+          "canceled_at",
+          "rejected_at",
+          "all_signed_at",
+          "call_back_url",
+          "reject_reason",
+          "message",
+          "comment",
+          "created_at",
+          "updated_at",
+          "user"
+        ],
+        "properties": {
+          "id": {
+            "description": "Sign request id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "key": {
+            "description": "Sign request key",
+            "type": "string"
+          },
+          "external_key": {
+            "description": "Sign request external key",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "Sign request title",
+            "type": "string"
+          },
+          "signing_type": {
+            "$ref": "#/components/schemas/SigningType",
+            "description": "Sign request signing type"
+          },
+          "signing_sequence_type": {
+            "$ref": "#/components/schemas/SigningSequenceType",
+            "description": "Sign request sequence type"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SignRequestStatus",
+            "description": "Sign request status"
+          },
+          "sent_at": {
+            "description": "Date Time the sign request is sent",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expires_at": {
+            "description": "Date Time the sign request expires",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "canceled_at": {
+            "description": "Date Time the sign request is canceled",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rejected_at": {
+            "description": "Date Time the sign request is rejected",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "all_signed_at": {
+            "description": "Date Time the sign request is signed by all signers",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "call_back_url": {
+            "description": "Callback url to invoke when signrequest is completed",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "reject_reason": {
+            "description": "The reason given by the signer who rejected.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "The message to be included in the e-mail to the signers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "description": "A comment for internal use.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the sign request is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the sign request is last updated",
+            "type": "string",
+            "format": "date-time"
+          },
+          "user": {
+            "$ref": "#/components/schemas/NestedUserResponse",
+            "description": "The owner of the sign request."
+          }
+        },
+        "type": "object"
+      },
+      "GetSignRequestsResponse": {
+        "required": [
+          "id",
+          "key",
+          "external_key",
+          "title",
+          "signing_type",
+          "signing_sequence_type",
+          "status",
+          "sent_at",
+          "expires_at",
+          "canceled_at",
+          "rejected_at",
+          "all_signed_at",
+          "call_back_url",
+          "created_at",
+          "updated_at",
+          "user"
+        ],
+        "properties": {
+          "id": {
+            "description": "Sign request id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "key": {
+            "description": "Sign request key",
+            "type": "string"
+          },
+          "external_key": {
+            "description": "Sign request external key",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "Sign request title",
+            "type": "string"
+          },
+          "signing_type": {
+            "$ref": "#/components/schemas/SigningType",
+            "description": "Sign request signing type"
+          },
+          "signing_sequence_type": {
+            "$ref": "#/components/schemas/SigningSequenceType",
+            "description": "Sign request sequence type"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SignRequestStatus",
+            "description": "Sign request status"
+          },
+          "sent_at": {
+            "description": "Date Time the sign request is sent",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expires_at": {
+            "description": "Date Time the sign request expires",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "canceled_at": {
+            "description": "Date Time the sign request is canceled",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rejected_at": {
+            "description": "Date Time the sign request is rejected",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "all_signed_at": {
+            "description": "Date Time the sign request is signed by all signers",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "call_back_url": {
+            "description": "Callback url to invoke when signrequest is completed",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "created_at": {
+            "description": "Date Time the sign request is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the sign request is last updated",
+            "type": "string",
+            "format": "date-time"
+          },
+          "user": {
+            "$ref": "#/components/schemas/NestedUserResponse",
+            "description": "The owner of the sign request."
+          }
+        },
+        "type": "object"
+      },
+      "GetSignRequestSignerResponse": {
+        "required": [
+          "id",
+          "key",
+          "email",
+          "name",
+          "language",
+          "role",
+          "auth_method",
+          "phone",
+          "reject_reason",
+          "sign_url",
+          "redirect_url",
+          "created_at",
+          "updated_at",
+          "attachment_message",
+          "attachments",
+          "fields",
+          "emandate",
+          "signer_progresses"
+        ],
+        "properties": {
+          "id": {
+            "description": "The signer's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "key": {
+            "description": "The signer's key",
+            "type": "string"
+          },
+          "email": {
+            "description": "The signer's emailaddress",
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "description": "The signer's name",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "description": "The language in which the signer receives correspondence.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/SignerRole",
+            "description": "The signer's role"
+          },
+          "auth_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerAuthenticationMethod",
+                "description": "Authentication method for signer."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authentication method for signer."
+          },
+          "phone": {
+            "description": "The phone number that is used when SMS messages needs to be sent to the signer",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reject_reason": {
+            "description": "The reject reason of the signer after the signer has rejected the signrequest.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sign_url": {
+            "description": "The URL where this signer can sign the sign request.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "url"
+          },
+          "redirect_url": {
+            "description": "The URL where this signer is redirected to after signing the documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the signer is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the signer is last updated",
+            "type": "string",
+            "format": "date-time"
+          },
+          "attachment_message": {
+            "description": "This is the main message you can add when requesting attachments back from the signer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attachments": {
+            "description": "Fields this signer must fill in when signing the sign request",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentResponse"
+            }
+          },
+          "fields": {
+            "description": "Fields this signer must fill in when signing the sign request",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldResponse"
+            }
+          },
+          "emandate": {
+            "$ref": "#/components/schemas/SignerEmandateResponse",
+            "description": "If auth method is 'emandate' then the emandate results are added here."
+          },
+          "signer_progresses": {
+            "description": "Progress that has been recorded for this signer",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignerProgressResponse"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "SignerProgressResponse": {
+        "required": [
+          "action",
+          "ip",
+          "location",
+          "system",
+          "value",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "description": "Type of progress",
+            "type": "string"
+          },
+          "ip": {
+            "description": "IP address that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "description": "Location that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "system": {
+            "description": "System / User agent that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "description": "Some additional information about the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Email status when email send",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the progress is recorded",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "SignerEmandateResponse": {
+        "required": [
+          "emandate_id",
+          "emandate_reason",
+          "instrument_code",
+          "sequence_type",
+          "transaction_status",
+          "max_value",
+          "purchase_id",
+          "debtor_signer_name",
+          "debtor_account_name",
+          "debtor_bank_id",
+          "debtor_iban",
+          "debtor_reference"
+        ],
+        "properties": {
+          "emandate_id": {
+            "type": "string"
+          },
+          "emandate_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instrument_code": {
+            "$ref": "#/components/schemas/Instrument"
+          },
+          "sequence_type": {
+            "$ref": "#/components/schemas/SequenceType"
+          },
+          "transaction_status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TransactionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purchase_id": {
+            "type": "string"
+          },
+          "debtor_signer_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "debtor_account_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "debtor_bank_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "debtor_iban": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "debtor_reference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "GetSignRequestSignersResponse": {
+        "required": [
+          "id",
+          "key",
+          "email",
+          "name",
+          "language",
+          "role",
+          "auth_method",
+          "phone",
+          "sign_url",
+          "redirect_url",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "description": "The signer's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "key": {
+            "description": "The signer's key",
+            "type": "string"
+          },
+          "email": {
+            "description": "The signer's emailaddress",
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "description": "The signer's name",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "description": "The language in which the signer receives correspondence.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/SignerRole",
+            "description": "The signer's role"
+          },
+          "auth_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerAuthenticationMethod",
+                "description": "Authentication method for signer."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authentication method for signer."
+          },
+          "phone": {
+            "description": "The phone number that is used when SMS messages needs to be sent to the signer",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sign_url": {
+            "description": "The URL where this signer can sign the sign request.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "url"
+          },
+          "redirect_url": {
+            "description": "The URL where this signer is redirected to after signing the documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the signer is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the signer is last updated",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "AttachmentResponse": {
+        "required": [
+          "description",
+          "optional"
+        ],
+        "properties": {
+          "description": {
+            "description": "Description of the attachment",
+            "type": "string"
+          },
+          "optional": {
+            "description": "Is the attachment optional",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FieldResponse": {
+        "required": [
+          "type",
+          "document",
+          "signer",
+          "page",
+          "x",
+          "y",
+          "width",
+          "height",
+          "optional"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/FieldType",
+            "description": "Type of the field"
+          },
+          "document": {
+            "description": "Id of the document the field is for",
+            "type": "integer",
+            "minimum": 1
+          },
+          "signer": {
+            "description": "Id of the signer the field is for",
+            "type": "integer",
+            "minimum": 1
+          },
+          "page": {
+            "description": "Page the field is on",
+            "type": "integer",
+            "minimum": 1
+          },
+          "x": {
+            "description": "X coordinate the field is located on",
+            "type": "number",
+            "format": "float"
+          },
+          "y": {
+            "description": "Y coordinate the field is located on",
+            "type": "number",
+            "format": "float"
+          },
+          "width": {
+            "description": "Width of the field",
+            "type": "number",
+            "format": "float"
+          },
+          "height": {
+            "description": "Height of the field",
+            "type": "number",
+            "format": "float"
+          },
+          "optional": {
+            "description": "True when field is optional",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "SignRequestEventBase": {
+        "required": [
+          "header",
+          "data"
+        ],
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/WebhookHeader",
+            "description": "Webhook header"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SignRequestEventResource",
+            "description": "Webhook event data"
+          }
+        },
+        "type": "object"
+      },
+      "SignRequestEventResource": {
+        "required": [
+          "id",
+          "key",
+          "external_key",
+          "title",
+          "signing_type",
+          "signing_sequence_type",
+          "status",
+          "sent_at",
+          "expires_at",
+          "canceled_at",
+          "rejected_at",
+          "all_signed_at",
+          "call_back_url",
+          "reject_reason",
+          "message",
+          "comment",
+          "created_at",
+          "updated_at",
+          "user"
+        ],
+        "properties": {
+          "id": {
+            "description": "Sign request id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "key": {
+            "description": "Sign request key",
+            "type": "string"
+          },
+          "external_key": {
+            "description": "Sign request external key",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "Sign request title",
+            "type": "string"
+          },
+          "signing_type": {
+            "$ref": "#/components/schemas/SigningType",
+            "description": "Sign request signing type"
+          },
+          "signing_sequence_type": {
+            "$ref": "#/components/schemas/SigningSequenceType",
+            "description": "Sign request sequence type"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SignRequestStatus",
+            "description": "Sign request status"
+          },
+          "sent_at": {
+            "description": "Date Time the sign request is sent",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expires_at": {
+            "description": "Date Time the sign request expires",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "canceled_at": {
+            "description": "Date Time the sign request is canceled",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rejected_at": {
+            "description": "Date Time the sign request is rejected",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "all_signed_at": {
+            "description": "Date Time the sign request is signed by all signers",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "call_back_url": {
+            "description": "Callback url to invoke when signrequest is completed",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "reject_reason": {
+            "description": "The reason given by the signer who rejected.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "The message to be included in the e-mail to the signers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "description": "A comment for internal use.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the sign request is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the sign request is last updated",
+            "type": "string",
+            "format": "date-time"
+          },
+          "user": {
+            "$ref": "#/components/schemas/NestedUserResponse",
+            "description": "The owner of the sign request."
+          }
+        },
+        "type": "object"
+      },
+      "SignerEventBase": {
+        "required": [
+          "header",
+          "data"
+        ],
+        "properties": {
+          "header": {
+            "$ref": "#/components/schemas/WebhookHeader",
+            "description": "Webhook header"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SignerEventResource",
+            "description": "Webhook event data"
+          }
+        },
+        "type": "object"
+      },
+      "SignerEventResource": {
+        "required": [
+          "id",
+          "key",
+          "email",
+          "name",
+          "language",
+          "role",
+          "auth_method",
+          "phone",
+          "reject_reason",
+          "sign_url",
+          "redirect_url",
+          "created_at",
+          "updated_at",
+          "sign_request",
+          "attachment_message",
+          "attachments",
+          "signer_progresses"
+        ],
+        "properties": {
+          "id": {
+            "description": "The signer's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "key": {
+            "description": "The signer's key",
+            "type": "string"
+          },
+          "email": {
+            "description": "The signer's emailaddress",
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "description": "The signer's name",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "description": "The language in which the signer receives correspondence.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/SignerRole",
+            "description": "The signer's role"
+          },
+          "auth_method": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SignerAuthenticationMethod",
+                "description": "Authentication method for signer."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authentication method for signer."
+          },
+          "phone": {
+            "description": "The phone number that is used when SMS messages needs to be sent to the signer",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reject_reason": {
+            "description": "The reject reason of the signer after the signer has rejected the signrequest.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sign_url": {
+            "description": "The URL where this signer can sign the sign request.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "url"
+          },
+          "redirect_url": {
+            "description": "The URL where this signer is redirected to after signing the documents.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the signer is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the signer is last updated",
+            "type": "string",
+            "format": "date-time"
+          },
+          "sign_request": {
+            "$ref": "#/components/schemas/SignRequestEventResource",
+            "description": "The signer's signrequest"
+          },
+          "attachment_message": {
+            "description": "This is the main message you can add when requesting attachments back from the signer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attachments": {
+            "description": "Fields this signer must fill in when signing the sign request",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignerAttachmentResource"
+            }
+          },
+          "signer_progresses": {
+            "description": "Progress that has been recorded for this signer",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SignerProgressResource"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "SignerProgressResource": {
+        "required": [
+          "action",
+          "ip",
+          "location",
+          "system",
+          "value",
+          "created_at"
+        ],
+        "properties": {
+          "action": {
+            "description": "Type of progress",
+            "type": "string"
+          },
+          "ip": {
+            "description": "IP address that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "description": "Location that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "system": {
+            "description": "System / User agent that is recorded with the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "description": "Some additional information about the progress",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "description": "Date Time the progress is recorded",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "SignerAttachmentResource": {
+        "required": [
+          "id",
+          "document_id",
+          "description",
+          "optional",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "description": "The attachment's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "document_id": {
+            "description": "The document id when the attachment is provided",
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": {
+            "description": "Description of the attachment",
+            "type": "string"
+          },
+          "optional": {
+            "description": "Is the attachment optional",
+            "type": "boolean"
+          },
+          "created_at": {
+            "description": "Date Time the attachment is created",
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "description": "Date Time the attachment is last updated",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "type": "object"
+      },
+      "AttachmentType": {
+        "type": "string",
+        "enum": [
+          "terms",
+          "attachment"
+        ]
+      },
+      "DocumentStatus": {
+        "type": "string",
+        "enum": [
+          "created",
+          "converted",
+          "conversion_failed",
+          "sealed",
+          "pending_purge",
+          "purged"
+        ]
+      },
+      "DocumentType": {
+        "type": "string",
+        "enum": [
+          "attachment",
+          "signerattachment",
+          "temporary"
+        ]
+      },
+      "FieldType": {
+        "type": "string",
+        "enum": [
+          "signature",
+          "initial",
+          "text",
+          "date",
+          "checkbox",
+          "radio"
+        ]
+      },
+      "SignRequestStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published",
+          "all_signed",
+          "all_sealed",
+          "proof_document_created",
+          "all_merged",
+          "completed",
+          "rejected",
+          "failed",
+          "canceled",
+          "purged"
+        ]
+      },
+      "SignRequestTemplateFieldPosition": {
+        "type": "string",
+        "enum": [
+          "fromtop",
+          "frombottom"
+        ]
+      },
+      "SignRequestTemplateStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published"
+        ]
+      },
+      "SignerAuthenticationMethod": {
+        "type": "string",
+        "enum": [
+          "sms",
+          "idin",
+          "idincomplete",
+          "emandate",
+          "pimid"
+        ]
+      },
+      "SignerInvitationMethod": {
+        "type": "string",
+        "enum": [
+          "custom",
+          "self"
+        ]
+      },
+      "SignerRole": {
+        "type": "string",
+        "enum": [
+          "signer",
+          "approver",
+          "cc",
+          "dc"
+        ]
+      },
+      "SignerStatus": {
+        "type": "string",
+        "enum": [
+          "created",
+          "notified",
+          "signed",
+          "approved",
+          "completed",
+          "rejected",
+          "failed",
+          "purged"
+        ]
+      },
+      "SigningSequenceType": {
+        "type": "string",
+        "enum": [
+          "sequential",
+          "parallel"
+        ]
+      },
+      "SigningType": {
+        "type": "string",
+        "enum": [
+          "single",
+          "multiple"
+        ]
+      },
+      "NestedUserResponse": {
+        "required": [
+          "id",
+          "email",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "description": "The user's id",
+            "type": "integer",
+            "minimum": 1
+          },
+          "email": {
+            "description": "The user's emailaddress",
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "description": "The user's name",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "CreatedResponse": {
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "description": "Id of the created entity",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "type": "object"
+      },
+      "CreatedUuidResponseBody": {
+        "properties": {
+          "id": {
+            "description": "Id of the created entity",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "type": "object"
+      },
+      "ValidationErrorResponse": {
+        "properties": {
+          "message": {
+            "description": "Validation error message",
+            "type": "string"
+          },
+          "errors": {
+            "description": "Validation error message",
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "type": "object"
+      }
+    },
+    "parameters": {
+      "organization": {
+        "name": "organization",
+        "in": "path",
+        "description": "Id of the organization.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "account": {
+        "name": "account",
+        "in": "path",
+        "description": "Id of the account.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "user": {
+        "name": "user",
+        "in": "path",
+        "description": "Id of the user.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "client": {
+        "name": "client",
+        "in": "path",
+        "description": "Id of the client.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "token": {
+        "name": "token",
+        "in": "path",
+        "description": "Id of the token.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "webhook_listener": {
+        "name": "webhook_listener",
+        "in": "path",
+        "description": "Id of the webhook listener.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "signrequests_filter_status": {
+        "name": "status",
+        "in": "query",
+        "description": "When provided, only sign requests with the provided status are fetched.",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "sign_request": {
+        "name": "sign_request",
+        "in": "path",
+        "description": "Id of the signrequest.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "document": {
+        "name": "document",
+        "in": "path",
+        "description": "Id of the document.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "signer": {
+        "name": "signer",
+        "in": "path",
+        "description": "Id of the signer.",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "top": {
+        "name": "$top",
+        "in": "query",
+        "description": "Maximum number of items to get.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 100,
+          "maximum": 100,
+          "minimum": 1
+        }
+      },
+      "skip": {
+        "name": "$skip",
+        "in": "query",
+        "description": "Number of items to skip.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0
+        }
+      },
+      "page": {
+        "name": "$page",
+        "in": "query",
+        "description": "Page number to get. Default is 1.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1
+        }
+      },
+      "page_size": {
+        "name": "$page_size",
+        "in": "query",
+        "description": "Number of items to list per page. Default is 100, maximum is 100.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "default": 100,
+          "maximum": 100,
+          "minimum": 1
+        }
+      },
+      "search": {
+        "name": "$search",
+        "in": "query",
+        "description": "Search query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "orderby": {
+        "name": "$orderby",
+        "in": "query",
+        "description": "order by statement to order the results on. (e.g. title asc,created_at desc)",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "year": {
+        "name": "year",
+        "in": "query",
+        "description": "Year to get stats for.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 2000
+        }
+      },
+      "month": {
+        "name": "month",
+        "in": "query",
+        "description": "Month to get stats for.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 12,
+          "minimum": 1
+        }
+      },
+      "day": {
+        "name": "day",
+        "in": "query",
+        "description": "Day of month to get stats for.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "maximum": 31,
+          "minimum": 1
+        }
+      }
+    },
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "description": "Create an OAuth2 Client on the [API settings page](https://app.stiply.nl/settings/api)\nand use one of the supported flows to get access to the API.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://app.stiply.nl/oauth/authorize",
+            "tokenUrl": "https://api.stiply.nl/oauth/token",
+            "refreshUrl": "https://api.stiply.nl/oauth/token",
+            "scopes": {
+              "SignRequest.ReadWrite": "Read, create and update sign requests",
+              "SignRequest.ReadWrite.Limited": "Create new sign requests and only read and update sign requests created by this client / application"
+            }
+          },
+          "clientCredentials": {
+            "tokenUrl": "https://api.stiply.nl/oauth/token",
+            "scopes": {
+              "SignRequest.ReadWrite": "Read, create and update sign requests",
+              "SignRequest.ReadWrite.Limited": "Create new sign requests and only read and update sign requests created by this client / application"
+            }
+          }
+        }
+      },
+      "pat": {
+        "type": "http",
+        "description": "Create a Personal Access Token (PAT) on the [API settings page](https://app.stiply.nl/settings/api)\nand send it in the `Authorization` HTTP header to get access to the API.",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "sign requests",
+      "description": "Endpoints to send and manage sign requests.",
+      "x-displayName": "Sign Requests"
+    }
+  ],
+  "webhooks": {
+    "signrequest.canceled": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.canceled",
+        "requestBody": {
+          "description": "Event that occurs when a sign request is canceled.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signrequest.completed": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.completed",
+        "requestBody": {
+          "description": "Event that occurs when a sign request is completed.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signrequest.failed": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.failed",
+        "requestBody": {
+          "description": "Event that occurs when a sign request is failed.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signrequest.forwarded": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.forwarded",
+        "requestBody": {
+          "description": "Event that occurs when a sign request is forwarded.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signrequest.rejected": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.rejected",
+        "requestBody": {
+          "description": "Event that occurs when a sign request is rejected.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signrequest.sent": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.sent",
+        "requestBody": {
+          "description": "Event that occurs when a sign request is sent.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signrequest.termextended": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signrequest.termextended",
+        "requestBody": {
+          "description": "Event that occurs when the term of a sign request is extended.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequestEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "singer.completed": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.completed",
+        "requestBody": {
+          "description": "Event that occurs when a signer has completed signing the documents",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.email.changed": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.email.changed",
+        "requestBody": {
+          "description": "Event that occurs when a signer's emailaddress has changed",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.mail.complained": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.mail.complained",
+        "requestBody": {
+          "description": "Event that occurs when a signer has reported the notification mail as spam",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.mail.delivered": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.mail.delivered",
+        "requestBody": {
+          "description": "Event that occurs when the notification email is delivered to a signer",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.mail.failed": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.mail.failed",
+        "requestBody": {
+          "description": "Event that occurs when the notification email could not be delivered to a signer",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.mail.opened": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.mail.opened",
+        "requestBody": {
+          "description": "Event that occurs when the notification email is opened by a signer",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.signrequest.opened": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.signrequest.opened",
+        "requestBody": {
+          "description": "Event that occurs when the signrequest is opened by the signer.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    },
+    "signer.signrequest.rejected": {
+      "post": {
+        "tags": [
+          "sign requests"
+        ],
+        "operationId": "signer.signrequest.rejected",
+        "requestBody": {
+          "description": "Event that occurs when the signrequest is rejected by the signer.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignerEventBase"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Return a 200 status to indicate that the data was received successfully."
+          },
+          "500": {
+            "description": "When a 400 or 500 status is returned, the endpoint will be retried later on."
+          }
+        }
+      }
+    }
+  }
+}
